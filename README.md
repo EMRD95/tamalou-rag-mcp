@@ -142,7 +142,11 @@ mcp_servers:
 
 Tools exposed:
 - `search` — semantic search across all collections, returns hits + auto screenshot
+  - `query` (required) — search terms
+  - `n` — number of results (default: 3)
+  - `source` — filter by source name, e.g. `"My Book"`, `"My Book 2"`, `"My Document 0"`
 - `add` — incremental ingest of a local path or http URL
+- `health` — check server status and document counts per collection
 
 ## Running as a systemd service
 
