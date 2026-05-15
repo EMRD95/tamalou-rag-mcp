@@ -1,0 +1,18 @@
+[Unit]
+Description=Tamalou RAG Server (modular version)
+After=network.target
+
+[Service]
+Type=simple
+# Adjust User and paths to match your install
+User=ubu
+WorkingDirectory=/home/ubu/tamalou-rag-mcp
+Environment=HF_HOME=/home/ubu/.cache/huggingface
+Environment=TAMALOU_CONFIG=/home/ubu/tamalou-rag-mcp/config.yaml
+ExecStartPre=/bin/sleep 3
+ExecStart=/home/ubu/tamalou-rag-mcp/venv/bin/tamalou-server
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

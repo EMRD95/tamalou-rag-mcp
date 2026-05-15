@@ -120,11 +120,35 @@ In `~/.hermes/config.yaml`:
 mcp_servers:
   tamalou:
     command: /path/to/tamalou-rag-mcp/venv/bin/tamalou-mcp
+    env:
+      TAMALOU_CONFIG: /path/to/tamalou-rag-mcp/config.yaml
 ```
 
 Tools exposed:
 - `search` — semantic search across all collections, returns hits + auto screenshot
 - `add` — incremental ingest of a local path or http URL
+
+## Running as a systemd service
+
+A template unit file is included at `deploy/tamalou-rag.service`. Edit paths
+to match your install, then:
+
+```bash
+sudo cp deploy/tamalou-rag.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tamalou-rag.service
+
+# Verify
+systemctl status tamalou-rag.service
+curl -s http://localhost:8702/health
+# → {"status":"ok","collections":{"guide_pages":N,"tamalou_memory":M}}
+```
+
+Logs:
+
+```bash
+journalctl -u tamalou-rag.service -f
+```
 
 ## License
 
