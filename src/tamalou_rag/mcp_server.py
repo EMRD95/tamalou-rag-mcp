@@ -29,7 +29,7 @@ def _send(rid, result=None, error=None):
     sys.stdout.flush()
 
 
-def _http_search(q: str, n: int) -> dict:
+def _http_search(q: str, n: int, source: str | None = None) -> dict:
     cfg = load_config()
     host = cfg["server"].get("host", "127.0.0.1")
     if host == "0.0.0.0":
@@ -37,13 +37,16 @@ def _http_search(q: str, n: int) -> dict:
     port = cfg["server"]["port"]
     import urllib.parse
     url = f"http://{host}:{port}/search?q={urllib.parse.quote(q)}&n={n}"
+    if source:
+        url += f"&source={urllib.parse.quote(source)}"
     return json.loads(urllib.request.urlopen(url, timeout=10).read())
 
 
 def tool_search(params: dict) -> dict:
     query = params.get("query", "")
     n = int(params.get("n", 3))
-    data = _http_search(query, n)
+    source = params.get("source")
+    data = _http_search(query, n, source)
     hits = data.get("hits", [])
 
     # Find the best paginated hit (top one with a page number)
@@ -122,6 +125,7 @@ TOOLS = [
             "properties": {
                 "query": {"type": "string"},
                 "n": {"type": "integer", "default": 3},
+                "source": {"type": "string", "description": "Filter by source name (e.g. 'Guide du Routard', 'Rough Guides', 'Delicious Malaysia')"},
             },
             "required": ["query"],
         },

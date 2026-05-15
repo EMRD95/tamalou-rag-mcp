@@ -46,6 +46,7 @@ def search(
     q: str = Query(min_length=1),
     n: int = Query(default=3, ge=1, le=50),
     collection: str | None = None,
+    source: str | None = None,
 ):
     """Search a single collection by name, or all if not specified."""
     model = get_embedding_model()
@@ -57,7 +58,10 @@ def search(
         coll = _collections.get(name)
         if not coll:
             continue
-        res = coll.query(query_embeddings=[emb], n_results=n)
+        kwargs = {"query_embeddings": [emb], "n_results": n}
+        if source:
+            kwargs["where"] = {"source": source}
+        res = coll.query(**kwargs)
         if not (res.get("ids") and res["ids"][0]):
             continue
         for i, doc_id in enumerate(res["ids"][0]):
