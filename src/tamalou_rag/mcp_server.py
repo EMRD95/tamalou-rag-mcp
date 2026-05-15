@@ -97,6 +97,22 @@ def tool_add(params: dict) -> dict:
     return add_file(path, label, loader)
 
 
+def tool_health(_params: dict) -> dict:
+    """Quick check that the underlying RAG HTTP server is up + collection sizes."""
+    cfg = load_config()
+    host = cfg.get("server", {}).get("host", "localhost")
+    if host == "0.0.0.0":
+        host = "localhost"
+    port = int(cfg.get("server", {}).get("port", 8702))
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+            data["server"] = f"{host}:{port}"
+            return data
+    except Exception as e:
+        return {"status": "down", "server": f"{host}:{port}", "error": str(e)}
+
+
 TOOLS = [
     {
         "name": "search",
@@ -122,6 +138,11 @@ TOOLS = [
             },
             "required": ["source"],
         },
+    },
+    {
+        "name": "health",
+        "description": "Check the RAG server status and document counts per collection. No arguments.",
+        "inputSchema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -157,6 +178,8 @@ def main():
                     result = tool_search(args)
                 elif name == "add":
                     result = tool_add(args)
+                elif name == "health":
+                    result = tool_health(args)
                 else:
                     _send(rid, error={"code": -32601, "message": f"Unknown: {name}"})
                     continue
