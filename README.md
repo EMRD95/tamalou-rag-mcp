@@ -3,6 +3,8 @@
 Modular RAG MCP server with auto screenshots for visual sources (PDFs).
 Built for CPU-bound prod boxes with GPU offload for heavy embedding work.
 
+![MCP example — search returns text + auto-generated screenshot of matching PDF pages](mcp_example.png)
+
 - **ChromaDB** vector store (local, persistent)
 - **Granite 97M multilingual** embeddings (FR/EN, CPU-friendly)
 - **Auto screenshots** for paginated sources — pages rendered as PNG, perfect for Discord/Slack
@@ -85,6 +87,7 @@ scp /tmp/bigbook.tar.gz prod:/tmp/
 tamalou-import /tmp/bigbook.tar.gz
 # → schema check, model match, IDs deduped, source PDFs restored,
 #   running server reloaded automatically
+# or sudo systemctl restart tamalou-rag if service is setup
 ```
 
 Bundles are model-locked: import refuses if the embedding model differs between
