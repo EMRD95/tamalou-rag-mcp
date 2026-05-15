@@ -99,6 +99,19 @@ sender and receiver (otherwise vectors aren't comparable).
 `tamalou-import` flags:
 - `--allow-overwrite` — re-add IDs that already exist (default skips them)
 
+## Removing a document
+
+```bash
+tamalou-remove --source "Malaysia Statistics" --dry-run   # preview
+tamalou-remove --source "Malaysia Statistics"             # interactive confirm
+tamalou-remove --filename Malaysia_Statistics.pdf --yes   # by filename, no prompt
+tamalou-remove --source "Old Book" --keep-pdf             # keep file in exports/
+```
+
+Removes all matching chunks across collections, deletes the source PDF from
+`exports/` (unless `--keep-pdf`), and triggers a server `/reload` so a running
+instance picks up the change.
+
 ## Migrating an existing ChromaDB
 
 If you have a chroma_db built by an older script that didn't store

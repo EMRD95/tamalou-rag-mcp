@@ -21,12 +21,13 @@ dependencies = [
 ]
 
 [project.scripts]
-tamalou-ingest  = "tamalou_rag.ingest:main"
-tamalou-add     = "tamalou_rag.add:main"
-tamalou-server  = "tamalou_rag.server:run"
-tamalou-mcp     = "tamalou_rag.mcp_server:main"
-tamalou-export  = "tamalou_rag.bundle:export_main"
-tamalou-import  = "tamalou_rag.bundle:import_main"
+tamalou-ingest = "tamalou_rag.ingest:main"
+tamalou-add = "tamalou_rag.add:main"
+tamalou-remove = "tamalou_rag.remove:main"
+tamalou-server = "tamalou_rag.server:run"
+tamalou-mcp = "tamalou_rag.mcp_server:main"
+tamalou-export = "tamalou_rag.bundle:export_main"
+tamalou-import = "tamalou_rag.bundle:import_main"
 tamalou-migrate = "tamalou_rag.migrate:main"
 
 [tool.setuptools.packages.find]
