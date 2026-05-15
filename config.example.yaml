@@ -1,0 +1,33 @@
+paths:
+  chroma_db: ./chroma_db
+  data: ./data
+  exports: ./exports
+  screenshot: /tmp/tamalou_pages.png
+
+embedding:
+  model: ibm-granite/granite-embedding-97m-multilingual-r2
+  batch_size: 32
+
+server:
+  host: 0.0.0.0
+  port: 8702
+
+loaders:
+  pdf:
+    enabled: true
+    max_chars_per_page: 2000
+    collection: guide_pages
+
+  discord_md:
+    enabled: true
+    burst_minutes: 30
+    burst_size: 25
+    overlap: 5
+    max_chars: 2000
+    collection: tamalou_memory
+
+  text:
+    enabled: true
+    chunk_chars: 1500
+    overlap: 150
+    collection: tamalou_memory

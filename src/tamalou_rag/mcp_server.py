@@ -1,0 +1,172 @@
+"""MCP stdio server — exposes `search` and `add` as tools.
+
+Search returns hits + an auto screenshot for any hit that has page metadata.
+Add ingests a file path (or remote URL) into the right collection.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import urllib.request
+from pathlib import Path
+
+from .add import add_file
+from .core import load_config
+from .screenshot import render_pages
+
+
+def _log(msg: str) -> None:
+    print(f"[tamalou-mcp] {msg}", file=sys.stderr, flush=True)
+
+
+def _send(rid, result=None, error=None):
+    resp = {"jsonrpc": "2.0", "id": rid}
+    if error:
+        resp["error"] = error
+    else:
+        resp["result"] = result
+    sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def _http_search(q: str, n: int) -> dict:
+    cfg = load_config()
+    host = cfg["server"].get("host", "127.0.0.1")
+    if host == "0.0.0.0":
+        host = "127.0.0.1"
+    port = cfg["server"]["port"]
+    import urllib.parse
+    url = f"http://{host}:{port}/search?q={urllib.parse.quote(q)}&n={n}"
+    return json.loads(urllib.request.urlopen(url, timeout=10).read())
+
+
+def tool_search(params: dict) -> dict:
+    query = params.get("query", "")
+    n = int(params.get("n", 3))
+    data = _http_search(query, n)
+    hits = data.get("hits", [])
+
+    # Find the best paginated hit (top one with a page number)
+    best_page_hit = next(
+        (h for h in hits if h.get("metadata", {}).get("page") is not None),
+        None,
+    )
+
+    out = {"query": query, "hits": hits[:n]}
+    if best_page_hit:
+        page_meta = best_page_hit["metadata"]
+        path = render_pages([{
+            "source": best_page_hit.get("source"),
+            "page": page_meta.get("page"),
+            "pdf_filename": page_meta.get("pdf_filename"),
+        }])
+        if path:
+            out["screenshot"] = f"MEDIA:{path}"
+            out["screenshot_matches"] = {
+                "source": best_page_hit.get("source"),
+                "page": page_meta.get("page"),
+                "text_excerpt": best_page_hit.get("text", "")[:300],
+            }
+            out["_instruction"] = (
+                "The screenshot in `screenshot` shows the page described in "
+                "`screenshot_matches`. If you quote a passage alongside the "
+                "screenshot, ONLY quote from `screenshot_matches.text_excerpt` "
+                "or the matching `hits[]` entry — never from a different hit, "
+                "or the image and the quote will not match. Include the MEDIA: "
+                "tag verbatim in your reply (no markdown image syntax)."
+            )
+    return out
+
+
+def tool_add(params: dict) -> dict:
+    src = params.get("source", "")
+    label = params.get("label") or None
+    loader = params.get("loader")
+
+    # Remote URL → download first
+    if src.startswith(("http://", "https://")):
+        cfg = load_config()
+        cache = Path(cfg["paths"]["exports"]) / "_downloads"
+        cache.mkdir(parents=True, exist_ok=True)
+        local = cache / Path(src.split("?")[0]).name
+        urllib.request.urlretrieve(src, local)
+        path = local
+    else:
+        path = Path(src)
+
+    return add_file(path, label, loader)
+
+
+TOOLS = [
+    {
+        "name": "search",
+        "description": "Semantic search across all indexed sources (PDFs, Discord exports, etc.). Returns hits with text + auto screenshot for paginated sources.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "n": {"type": "integer", "default": 3},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "add",
+        "description": "Incrementally index a new source file (local path or http URL). Auto-detects format. The new content becomes searchable immediately, no restart needed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "File path or http(s) URL"},
+                "label": {"type": "string", "description": "Display name for the source"},
+                "loader": {"type": "string", "description": "Force a specific loader (pdf, discord_md, ...). Optional."},
+            },
+            "required": ["source"],
+        },
+    },
+]
+
+
+def main():
+    _log("started")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        method = req.get("method")
+        rid = req.get("id")
+        params = req.get("params", {})
+
+        if method == "initialize":
+            _send(rid, {
+                "protocolVersion": "2024-11-05",
+                "serverInfo": {"name": "tamalou-rag", "version": "0.1.0"},
+                "capabilities": {"tools": {}},
+            })
+        elif method == "tools/list":
+            _send(rid, {"tools": TOOLS})
+        elif method == "tools/call":
+            name = params.get("name", "")
+            args = params.get("arguments", {})
+            try:
+                if name == "search":
+                    result = tool_search(args)
+                elif name == "add":
+                    result = tool_add(args)
+                else:
+                    _send(rid, error={"code": -32601, "message": f"Unknown: {name}"})
+                    continue
+                _send(rid, {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]})
+            except Exception as e:
+                _log(f"error in {name}: {e}")
+                _send(rid, {"content": [{"type": "text", "text": json.dumps({"error": str(e)})}], "isError": True})
+        elif method == "notifications/initialized":
+            pass
+
+
+if __name__ == "__main__":
+    main()
