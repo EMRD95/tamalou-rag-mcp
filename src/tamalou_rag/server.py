@@ -64,12 +64,15 @@ def search(
         res = coll.query(**kwargs)
         if not (res.get("ids") and res["ids"][0]):
             continue
+        if not (res.get("documents") and res["documents"][0]):
+            continue
         for i, doc_id in enumerate(res["ids"][0]):
             meta = res["metadatas"][0][i] or {}
+            doc = res["documents"][0][i] or ""
             out.append({
                 "score": round(float(res["distances"][0][i]), 4),
                 "collection": name,
-                "text": res["documents"][0][i][:600],
+                "text": doc[:600],
                 "source": meta.get("source", "?"),
                 "metadata": meta,
             })

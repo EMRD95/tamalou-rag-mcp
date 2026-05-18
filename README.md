@@ -3,7 +3,7 @@
 Modular RAG MCP server with auto screenshots for visual sources (PDFs).
 Built for CPU-bound prod boxes with GPU offload for heavy embedding work.
 
-![MCP example — search returns text + auto-generated screenshot of matching PDF pages](mcp_example.png)
+![MCP example — search returns text + auto-generated screenshot of matching PDF pages](https://files.catbox.moe/c5u8oo.png)
 
 - **ChromaDB** vector store (local, persistent)
 - **Granite 97M multilingual** embeddings (FR/EN, CPU-friendly)
