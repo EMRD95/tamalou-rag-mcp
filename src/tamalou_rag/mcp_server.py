@@ -36,10 +36,25 @@ def _http_search(q: str, n: int, source: str | None = None) -> dict:
         host = "127.0.0.1"
     port = cfg["server"]["port"]
     import urllib.parse
-    url = f"http://{host}:{port}/search?q={urllib.parse.quote(q)}&n={n}"
+
+    # Use hybrid (RRF: semantic + BM25) for guide_pages — the collection
+    # where exact-term matching on proper nouns matters most.
+    url = f"http://{host}:{port}/hybrid?q={urllib.parse.quote(q)}&n={n}"
     if source:
         url += f"&source={urllib.parse.quote(source)}"
-    return json.loads(urllib.request.urlopen(url, timeout=10).read())
+    try:
+        hybrid_data = json.loads(urllib.request.urlopen(url, timeout=10).read())
+        # Fall back to semantic-only if hybrid returns an error
+        if "error" not in hybrid_data:
+            return hybrid_data
+    except Exception:
+        pass
+
+    # Semantic fallback
+    url2 = f"http://{host}:{port}/search?q={urllib.parse.quote(q)}&n={n}"
+    if source:
+        url2 += f"&source={urllib.parse.quote(source)}"
+    return json.loads(urllib.request.urlopen(url2, timeout=10).read())
 
 
 def tool_search(params: dict) -> dict:
