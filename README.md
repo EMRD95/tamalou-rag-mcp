@@ -1,15 +1,16 @@
 # tamalou-rag-mcp
 
-Modular RAG MCP server with auto screenshots for visual sources (PDFs).
+Modular RAG MCP server with hybrid BM25+semantic search and auto screenshots for visual sources (PDFs).
 Built for CPU-bound prod boxes with GPU offload for heavy embedding work.
 
 ![MCP example — search returns text + auto-generated screenshot of matching PDF pages](mcp_example.png)
 
-- **ChromaDB** vector store (local, persistent)
+- **ChromaDB** vector store (local, persistent) + **BM25** lexical index
 - **Granite 97M multilingual** embeddings (FR/EN, CPU-friendly)
+- **Hybrid search** — Reciprocal Rank Fusion (RRF) combines semantic + BM25 for best accuracy on both concepts and proper nouns
 - **Auto screenshots** for paginated sources — pages rendered as PNG, perfect for Discord/Slack
 - **Modular loaders** — drop a file in `loaders/`, get a new format
-- **Incremental** — `add` a single file without rebuilding
+- **Incremental** — `add` a single file without rebuilding (BM25 auto-rebuilds on `/reload`)
 - **GPU offload bundles** — embed on a GPU box, ship a `.tar.gz`, import on prod
 
 ## Built-in loaders
@@ -141,7 +142,7 @@ mcp_servers:
 ```
 
 Tools exposed:
-- `search` — semantic search across all collections, returns hits + auto screenshot
+- `search` — hybrid BM25+semantic search (RRF) across all collections, returns hits + auto screenshot
   - `query` (required) — search terms
   - `n` — number of results (default: 3)
   - `source` — filter by source name, e.g. `"My Book"`, `"My Book 2"`, `"My Document 0"`
@@ -161,7 +162,7 @@ sudo systemctl enable --now tamalou-rag.service
 # Verify
 systemctl status tamalou-rag.service
 curl -s http://localhost:8702/health
-# → {"status":"ok","collections":{"guide_pages":N,"tamalou_memory":M}}
+# → {"status":"ok","collections":{"guide_pages":N,"tamalou_memory":M},"bm25":{"indexed":N,"active":true}}
 ```
 
 Logs:
