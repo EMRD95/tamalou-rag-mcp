@@ -82,6 +82,46 @@ def reload() -> dict:
     }
 
 
+@app.get("/page")
+def page(
+    page: int = Query(ge=0),
+    source: str | None = None,
+    collection: str = "guide_pages",
+) -> dict:
+    """Return an exact paginated document by metadata page.
+
+    This bypasses ranking entirely. It is meant for cases where search found
+    page N but the user needs the following page, or when BM25 keeps putting a
+    different page first. `page` is the stored PDF page index from metadata.
+    """
+    coll = _collections.get(collection)
+    if not coll:
+        return {"page": page, "collection": collection, "hits": [], "error": "collection not found"}
+
+    where: dict[str, Any]
+    if source:
+        where = {"$and": [{"page": page}, {"source": source}]}
+    else:
+        where = {"page": page}
+
+    res = coll.get(where=where, include=["documents", "metadatas"])
+    hits: list[dict] = []
+    ids = res.get("ids") or []
+    docs = res.get("documents") or []
+    metas = res.get("metadatas") or []
+    for i, doc_id in enumerate(ids):
+        meta = metas[i] or {}
+        doc = docs[i] or ""
+        hits.append({
+            "id": doc_id,
+            "collection": collection,
+            "text": doc[:1200],
+            "source": meta.get("source", "?"),
+            "metadata": meta,
+        })
+    return {"page": page, "collection": collection, "hits": hits}
+
+
 @app.get("/search")
 def search(
     q: str = Query(min_length=1),

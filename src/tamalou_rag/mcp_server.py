@@ -29,17 +29,20 @@ def _send(rid, result=None, error=None):
     sys.stdout.flush()
 
 
-def _http_search(q: str, n: int, source: str | None = None) -> dict:
+def _server_base_url() -> str:
     cfg = load_config()
     host = cfg["server"].get("host", "127.0.0.1")
     if host == "0.0.0.0":
         host = "127.0.0.1"
-    port = cfg["server"]["port"]
+    return f"http://{host}:{cfg['server']['port']}"
+
+
+def _http_search(q: str, n: int, source: str | None = None) -> dict:
     import urllib.parse
 
     # Use hybrid (RRF: semantic + BM25) for guide_pages — the collection
     # where exact-term matching on proper nouns matters most.
-    url = f"http://{host}:{port}/hybrid?q={urllib.parse.quote(q)}&n={n}"
+    url = f"{_server_base_url()}/hybrid?q={urllib.parse.quote(q)}&n={n}"
     if source:
         url += f"&source={urllib.parse.quote(source)}"
     try:
@@ -51,10 +54,19 @@ def _http_search(q: str, n: int, source: str | None = None) -> dict:
         pass
 
     # Semantic fallback
-    url2 = f"http://{host}:{port}/search?q={urllib.parse.quote(q)}&n={n}"
+    url2 = f"{_server_base_url()}/search?q={urllib.parse.quote(q)}&n={n}"
     if source:
         url2 += f"&source={urllib.parse.quote(source)}"
     return json.loads(urllib.request.urlopen(url2, timeout=10).read())
+
+
+def _http_page(page: int, source: str | None = None, collection: str = "guide_pages") -> dict:
+    import urllib.parse
+
+    url = f"{_server_base_url()}/page?page={page}&collection={urllib.parse.quote(collection)}"
+    if source:
+        url += f"&source={urllib.parse.quote(source)}"
+    return json.loads(urllib.request.urlopen(url, timeout=10).read())
 
 
 def tool_search(params: dict) -> dict:
@@ -92,6 +104,40 @@ def tool_search(params: dict) -> dict:
                 "or the matching `hits[]` entry — never from a different hit, "
                 "or the image and the quote will not match. Include the MEDIA: "
                 "tag verbatim in your reply (no markdown image syntax)."
+            )
+    return out
+
+
+def tool_page(params: dict) -> dict:
+    page = int(params.get("page", 0))
+    source = params.get("source")
+    collection = params.get("collection", "guide_pages")
+    data = _http_page(page, source, collection)
+    hits = data.get("hits", [])
+
+    out = {"page": page, "hits": hits}
+    best_page_hit = next(
+        (h for h in hits if h.get("metadata", {}).get("page") is not None),
+        None,
+    )
+    if best_page_hit:
+        page_meta = best_page_hit["metadata"]
+        path = render_pages([{
+            "source": best_page_hit.get("source"),
+            "page": page_meta.get("page"),
+            "pdf_filename": page_meta.get("pdf_filename"),
+        }])
+        if path:
+            out["screenshot"] = f"MEDIA:{path}"
+            out["screenshot_matches"] = {
+                "source": best_page_hit.get("source"),
+                "page": page_meta.get("page"),
+                "text_excerpt": best_page_hit.get("text", "")[:300],
+            }
+            out["_instruction"] = (
+                "Exact page lookup: this screenshot is rendered from metadata.page "
+                "without using search ranking. Quote only screenshot_matches.text_excerpt "
+                "or the matching hit."
             )
     return out
 
@@ -146,6 +192,19 @@ TOOLS = [
         },
     },
     {
+        "name": "page",
+        "description": "Render and return one exact PDF page by metadata page number, bypassing search ranking. Use this when you need the next page or a known page and search keeps returning another top hit.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "page": {"type": "integer", "description": "Stored PDF page index from metadata.page (0-based)."},
+                "source": {"type": "string", "description": "Optional source filter, e.g. 'Guide du Routard'."},
+                "collection": {"type": "string", "default": "guide_pages"},
+            },
+            "required": ["page"],
+        },
+    },
+    {
         "name": "add",
         "description": "Incrementally index a new source file (local path or http URL). Auto-detects format. The new content becomes searchable immediately, no restart needed.",
         "inputSchema": {
@@ -195,6 +254,8 @@ def main():
             try:
                 if name == "search":
                     result = tool_search(args)
+                elif name == "page":
+                    result = tool_page(args)
                 elif name == "add":
                     result = tool_add(args)
                 elif name == "health":
