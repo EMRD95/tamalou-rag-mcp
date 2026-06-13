@@ -30,12 +30,17 @@ class PdfLoader(Loader):
         try:
             for i in range(total):
                 text = doc[i].get_text() or "[no extractable text]"
+                try:
+                    page_label = doc[i].get_label() or str(i)
+                except Exception:
+                    page_label = str(i)
                 yield Chunk(
                     text=text[:max_chars],
                     source=label,
                     metadata={
                         "type": "pdf_page",
                         "page": i,
+                        "page_label": page_label,
                         "total_pages": total,
                         "pdf_filename": path.name,
                     },

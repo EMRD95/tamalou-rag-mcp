@@ -11,6 +11,7 @@ from fastapi import FastAPI, Query
 from rank_bm25 import BM25Okapi
 
 from .core import get_client, get_embedding_model, load_config
+from .screenshot import _resolve_pdf
 
 app = FastAPI(title="tamalou-rag-mcp")
 
@@ -120,6 +121,163 @@ def page(
             "metadata": meta,
         })
     return {"page": page, "collection": collection, "hits": hits}
+
+
+def _parse_requested_pages(
+    pages: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+) -> list[str]:
+    if pages:
+        out: list[str] = []
+        for part in pages.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                left, right = [p.strip() for p in part.split("-", 1)]
+                if left.lstrip("+-").isdigit() and right.lstrip("+-").isdigit():
+                    a, b = int(left), int(right)
+                    step = 1 if b >= a else -1
+                    out.extend(str(i) for i in range(a, b + step, step))
+                else:
+                    out.append(part)
+            else:
+                out.append(part)
+        return out
+    if start is not None:
+        stop = end if end is not None else start
+        step = 1 if stop >= start else -1
+        return [str(i) for i in range(start, stop + step, step)]
+    return []
+
+
+def _hits_for_where(coll, collection: str, where: dict[str, Any], limit: int | None = None) -> list[dict]:
+    kwargs: dict[str, Any] = {"where": where, "include": ["documents", "metadatas"]}
+    if limit is not None:
+        kwargs["limit"] = limit
+    res = coll.get(**kwargs)
+    hits: list[dict] = []
+    ids = res.get("ids") or []
+    docs = res.get("documents") or []
+    metas = res.get("metadatas") or []
+    for i, doc_id in enumerate(ids):
+        meta = metas[i] or {}
+        doc = docs[i] or ""
+        hits.append({
+            "id": doc_id,
+            "collection": collection,
+            "text": doc[:1200],
+            "source": meta.get("source", "?"),
+            "metadata": meta,
+        })
+    return hits
+
+
+def _source_pdf_filename(coll, collection: str, source: str | None) -> str | None:
+    if not source:
+        return None
+    hits = _hits_for_where(coll, collection, {"source": source}, limit=1)
+    if not hits:
+        return None
+    return hits[0].get("metadata", {}).get("pdf_filename")
+
+
+def _pdf_label_to_index(source: str | None, pdf_filename: str | None) -> dict[str, int]:
+    if not source:
+        return {}
+    pdf_path = _resolve_pdf(source, pdf_filename)
+    if not pdf_path:
+        return {}
+    import fitz
+
+    out: dict[str, int] = {}
+    doc = fitz.open(str(pdf_path))
+    try:
+        for i in range(len(doc)):
+            try:
+                label = doc[i].get_label() or ""
+            except Exception:
+                label = ""
+            if label and label not in out:
+                out[label] = i
+    finally:
+        doc.close()
+    return out
+
+
+def _where_page(page_idx: int, source: str | None) -> dict[str, Any]:
+    if source:
+        return {"$and": [{"page": page_idx}, {"source": source}]}
+    return {"page": page_idx}
+
+
+def _where_page_label(label: str, source: str | None) -> dict[str, Any]:
+    if source:
+        return {"$and": [{"page_label": label}, {"source": source}]}
+    return {"page_label": label}
+
+
+@app.get("/pages")
+def pages(
+    pages: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+    source: str | None = None,
+    collection: str = "guide_pages",
+    page_mode: str = "auto",
+) -> dict:
+    """Return several exact PDF pages in request order.
+
+    `page_mode`:
+    - `stored` / `pdf`: numbers are metadata.page PDF indexes (0-based)
+    - `book` / `label`: numbers are PDF/book page labels when available
+    - `auto`: try page_label/book numbering first, then fallback to metadata.page
+    """
+    coll = _collections.get(collection)
+    requested = _parse_requested_pages(pages, start, end)
+    if not coll:
+        return {"pages": requested, "collection": collection, "items": [], "error": "collection not found"}
+    if not requested:
+        return {"pages": requested, "collection": collection, "items": [], "error": "no pages requested"}
+
+    mode = page_mode.lower()
+    if mode == "pdf":
+        mode = "stored"
+    if mode == "label":
+        mode = "book"
+    pdf_filename = _source_pdf_filename(coll, collection, source) if mode in {"book", "auto"} else None
+    label_map = _pdf_label_to_index(source, pdf_filename) if mode in {"book", "auto"} else {}
+
+    items: list[dict] = []
+    for requested_page in requested:
+        hits: list[dict] = []
+        resolved_page: int | None = None
+        resolved_by = "none"
+
+        if mode in {"book", "auto"}:
+            hits = _hits_for_where(coll, collection, _where_page_label(requested_page, source))
+            if hits:
+                resolved_page = hits[0].get("metadata", {}).get("page")
+                resolved_by = "page_label"
+            elif requested_page in label_map:
+                resolved_page = label_map[requested_page]
+                hits = _hits_for_where(coll, collection, _where_page(resolved_page, source))
+                resolved_by = "pdf_label"
+
+        if not hits and mode in {"stored", "auto"} and requested_page.lstrip("+-").isdigit():
+            resolved_page = int(requested_page)
+            hits = _hits_for_where(coll, collection, _where_page(resolved_page, source))
+            resolved_by = "metadata.page"
+
+        items.append({
+            "requested_page": requested_page,
+            "page": resolved_page,
+            "resolved_by": resolved_by,
+            "hits": hits,
+        })
+
+    return {"pages": requested, "collection": collection, "source": source, "page_mode": page_mode, "items": items}
 
 
 @app.get("/search")

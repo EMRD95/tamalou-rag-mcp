@@ -150,6 +150,12 @@ Tools exposed:
   - `page` (required) — stored PDF page index, 0-based
   - `source` — optional source filter, e.g. `"Guide du Routard"`
   - `collection` — optional collection name (default: `guide_pages`)
+- `pages` — multi-page PDF lookup, one unique screenshot file per page to avoid Discord media-cache duplicates
+  - `pages` — list/comma/range input, e.g. `[83,84,85]`, `"83,84,85"`, or `"83-85"`
+  - `start` / `end` — alternative range input, also supports `start=85,end=83` for backwards navigation
+  - `source` — optional but recommended, especially for book page numbering
+  - `page_mode` — `auto` (default: book/PDF label first, then stored `metadata.page`), `book`/`label`, or `stored`/`pdf`
+  - output includes `screenshots[]`, each with its own `MEDIA:` path and matching `text_excerpt`
 - `add` — incremental ingest of a local path or http URL
 - `health` — check server status and document counts per collection
 

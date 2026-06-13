@@ -2,6 +2,7 @@
 
 Search returns hits + an auto screenshot for any hit that has page metadata.
 Page renders a known PDF page directly by stored metadata.page, bypassing search ranking.
+Pages renders several PDF pages at once with unique screenshot paths per page.
 Add ingests a file path (or remote URL) into the right collection.
 Health checks the underlying HTTP server and collection counts.
 """
@@ -68,6 +69,29 @@ def _http_page(page: int, source: str | None = None, collection: str = "guide_pa
     url = f"{_server_base_url()}/page?page={page}&collection={urllib.parse.quote(collection)}"
     if source:
         url += f"&source={urllib.parse.quote(source)}"
+    return json.loads(urllib.request.urlopen(url, timeout=10).read())
+
+
+def _http_pages(
+    pages: str | None = None,
+    start: int | None = None,
+    end: int | None = None,
+    source: str | None = None,
+    collection: str = "guide_pages",
+    page_mode: str = "auto",
+) -> dict:
+    import urllib.parse
+
+    params = {"collection": collection, "page_mode": page_mode}
+    if pages:
+        params["pages"] = pages
+    if start is not None:
+        params["start"] = str(start)
+    if end is not None:
+        params["end"] = str(end)
+    if source:
+        params["source"] = source
+    url = f"{_server_base_url()}/pages?{urllib.parse.urlencode(params)}"
     return json.loads(urllib.request.urlopen(url, timeout=10).read())
 
 
@@ -144,6 +168,76 @@ def tool_page(params: dict) -> dict:
     return out
 
 
+def _pages_arg_to_string(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return ",".join(str(v) for v in value)
+    return str(value)
+
+
+def _safe_slug(value: str) -> str:
+    import re
+
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", value).strip("_")[:40] or "page"
+
+
+def tool_pages(params: dict) -> dict:
+    pages_arg = _pages_arg_to_string(params.get("pages"))
+    start = params.get("start")
+    end = params.get("end")
+    source = params.get("source")
+    collection = params.get("collection", "guide_pages")
+    page_mode = params.get("page_mode", "auto")
+
+    data = _http_pages(
+        pages=pages_arg,
+        start=int(start) if start is not None else None,
+        end=int(end) if end is not None else None,
+        source=source,
+        collection=collection,
+        page_mode=page_mode,
+    )
+    out = dict(data)
+    screenshots: list[dict] = []
+    cfg = load_config()
+    shot_base = Path(cfg["paths"]["screenshot"])
+    shot_dir = shot_base.parent
+
+    for item in out.get("items", []):
+        best_page_hit = next(
+            (h for h in item.get("hits", []) if h.get("metadata", {}).get("page") is not None),
+            None,
+        )
+        if not best_page_hit:
+            continue
+        page_meta = best_page_hit["metadata"]
+        page_num = page_meta.get("page")
+        src = best_page_hit.get("source") or source or "source"
+        output = shot_dir / f"tamalou_page_{_safe_slug(str(src))}_{page_num}.png"
+        path = render_pages([{
+            "source": src,
+            "page": page_num,
+            "pdf_filename": page_meta.get("pdf_filename"),
+        }], output=str(output))
+        if path:
+            screenshots.append({
+                "requested_page": item.get("requested_page"),
+                "page": page_num,
+                "source": src,
+                "screenshot": f"MEDIA:{path}",
+                "text_excerpt": best_page_hit.get("text", "")[:300],
+            })
+
+    out["screenshots"] = screenshots
+    out["_instruction"] = (
+        "For multi-page requests, send each MEDIA screenshot separately with its page number. "
+        "Every screenshot path is unique to avoid Discord/client media-cache duplication. "
+        "Quote only the text_excerpt attached to the same screenshot."
+    )
+    return out
+
+
 def tool_add(params: dict) -> dict:
     src = params.get("source", "")
     label = params.get("label") or None
@@ -207,6 +301,21 @@ TOOLS = [
         },
     },
     {
+        "name": "pages",
+        "description": "Return several exact PDF pages at once, with one unique screenshot file per page. Supports comma/range input and book/PDF page labels when available.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pages": {"description": "Pages as a list, comma string, or ranges like '83,84,85' or '83-85'."},
+                "start": {"type": "integer", "description": "Start page if using a range."},
+                "end": {"type": "integer", "description": "End page if using a range."},
+                "source": {"type": "string", "description": "Optional source filter, e.g. 'Guide du Routard'. Strongly recommended for book page labels."},
+                "collection": {"type": "string", "default": "guide_pages"},
+                "page_mode": {"type": "string", "default": "auto", "description": "auto (book label then metadata.page), book/label, or stored/pdf (0-based metadata.page)."},
+            },
+        },
+    },
+    {
         "name": "add",
         "description": "Incrementally index a new source file (local path or http URL). Auto-detects format. The new content becomes searchable immediately, no restart needed.",
         "inputSchema": {
@@ -258,6 +367,8 @@ def main():
                     result = tool_search(args)
                 elif name == "page":
                     result = tool_page(args)
+                elif name == "pages":
+                    result = tool_pages(args)
                 elif name == "add":
                     result = tool_add(args)
                 elif name == "health":
