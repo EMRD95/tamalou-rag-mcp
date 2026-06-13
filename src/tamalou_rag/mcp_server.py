@@ -1,7 +1,9 @@
-"""MCP stdio server — exposes `search` and `add` as tools.
+"""MCP stdio server — exposes Discord-safe RAG tools.
 
 Search returns hits + an auto screenshot for any hit that has page metadata.
+Page renders a known PDF page directly by stored metadata.page, bypassing search ranking.
 Add ingests a file path (or remote URL) into the right collection.
+Health checks the underlying HTTP server and collection counts.
 """
 from __future__ import annotations
 

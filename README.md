@@ -146,6 +146,10 @@ Tools exposed:
   - `query` (required) — search terms
   - `n` — number of results (default: 3)
   - `source` — filter by source name, e.g. `"My Book"`, `"My Book 2"`, `"My Document 0"`
+- `page` — exact PDF page lookup by stored `metadata.page`, returns that page + auto screenshot without search ranking
+  - `page` (required) — stored PDF page index, 0-based
+  - `source` — optional source filter, e.g. `"Guide du Routard"`
+  - `collection` — optional collection name (default: `guide_pages`)
 - `add` — incremental ingest of a local path or http URL
 - `health` — check server status and document counts per collection
 
